@@ -3,7 +3,7 @@
  * :tabSize=4:indentSize=4:noTabs=false:
  * :folding=explicit:collapseFolds=1:
  *
- * Copyright © 2011-2015 Matthieu Casanova
+ * Copyright © 2011-2022 Matthieu Casanova
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -38,7 +38,10 @@ import org.gjt.sp.jedit.io.VFSFileFilter;
 import org.gjt.sp.jedit.io.VFSManager;
 import org.gjt.sp.jedit.jEdit;
 import org.gjt.sp.util.Log;
+import org.gjt.sp.util.StandardUtilities;
 import org.gjt.sp.util.Task;
+
+import static org.gjt.sp.util.StandardUtilities.EMPTY_STRING_ARRAY;
 //}}}
 
 /**
@@ -56,7 +59,7 @@ public class IndexFilesTask extends Task
 		if (!property.isEmpty())
 		{
 			StringTokenizer tokenizer = new StringTokenizer(property, File.pathSeparator);
-			Collection<String> files = new HashSet<String>();
+			Collection<String> files = new HashSet<>();
 			while (tokenizer.hasMoreTokens())
 			{
 				String s = tokenizer.nextToken();
@@ -68,7 +71,7 @@ public class IndexFilesTask extends Task
 		}
 		else
 		{
-			SmartOpenPlugin.itemFinder.addFiles(new FileArrayProvider(new String[0]));
+			SmartOpenPlugin.itemFinder.addFiles(new FileArrayProvider(EMPTY_STRING_ARRAY));
 		}
 		long end = System.currentTimeMillis();
 		Log.log(Log.MESSAGE, this, "Indexation took ms:" + (end - start));
@@ -80,7 +83,7 @@ public class IndexFilesTask extends Task
 		VFS vfs = VFSManager.getVFSForPath(path);
 		Object vfsSession = null;
 		View activeView = jEdit.getActiveView();
-		Collection<String> files = new HashSet<String>();
+		Collection<String> files = new HashSet<>();
 		try
 		{
 			vfsSession = vfs.createVFSSession(path, activeView);

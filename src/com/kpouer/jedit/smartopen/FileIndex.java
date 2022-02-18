@@ -80,7 +80,7 @@ public class FileIndex implements Closeable
 	} //}}}
 
 	//{{{ getIndexWriterConfig() method
-	private IndexWriterConfig getIndexWriterConfig()
+	private static IndexWriterConfig getIndexWriterConfig()
 	{
 		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(new StandardAnalyzer());
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
@@ -141,9 +141,9 @@ public class FileIndex implements Closeable
 			for (String token : dotSplit)
 			{
 				String[] split = CAMELCASE.split(token);
-				for (int i = 0; i < split.length; i++)
+				for (String value : split)
 				{
-					builder.append(split[i]).append('*');
+					builder.append(value).append('*');
 				}
 			}
 

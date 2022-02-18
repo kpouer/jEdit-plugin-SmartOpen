@@ -3,7 +3,7 @@
  * :tabSize=8:indentSize=8:noTabs=false:
  * :folding=explicit:collapseFolds=1:
  *
- * Copyright © 2017 Matthieu Casanova
+ * Copyright © 2017-2022 Matthieu Casanova
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -37,9 +37,9 @@ public class IndexRecentFilesTask extends Task
 	public void _run()
 	{
 		setStatus("Listing files");
-    String[] recentFiles = BufferHistory.getHistory().stream()
-        .map(entry -> entry.path)
-        .toArray(String[]::new);
-    SmartOpenPlugin.itemFinder.addFiles(new FileArrayProvider(recentFiles));
+		String[] recentFiles = BufferHistory.getHistory().stream()
+			.map(entry -> entry.path)
+			.toArray(String[]::new);
+		SmartOpenPlugin.itemFinder.addFiles(new FileArrayProvider(recentFiles));
 	} //}}}
 }

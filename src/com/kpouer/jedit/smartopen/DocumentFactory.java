@@ -3,7 +3,7 @@
  * :tabSize=4:indentSize=4:noTabs=false:
  * :folding=explicit:collapseFolds=1:
  *
- * Copyright © 2016 Matthieu Casanova
+ * Copyright © 2016-2022 Matthieu Casanova
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -37,16 +37,16 @@ class DocumentFactory
 	public static final String FIELD_FREQUENCY = "frequency";
 	public static final String FIELD_FREQUENCY_STORED = "frequency_stored";
 	private final NumericDocValuesField frequency;
-    private final StoredField frequencyStored;
-    private final StringField name_caps;
-    private final TextField name;
-    private final StringField path;
-    private final Document document;
-    private final StringField fileExtension;
+	private final StoredField frequencyStored;
+	private final StringField name_caps;
+	private final TextField name;
+	private final StringField path;
+	private final Document document;
+	private final StringField fileExtension;
 
-    DocumentFactory()
-    {
-        path = new StringField(FIELD_PATH, "", Store.YES);
+	DocumentFactory()
+	{
+		path = new StringField(FIELD_PATH, "", Store.YES);
 		name = new TextField(FIELD_NAME, "", Store.NO);
 		name_caps = new StringField(FIELD_NAME_CAPS, "", Store.NO);
 		fileExtension = new StringField(FIELD_EXTENSION, "", Store.NO);
@@ -59,21 +59,21 @@ class DocumentFactory
 		document.add(fileExtension);
 		document.add(frequency);
 		document.add(frequencyStored);
-    }
+	}
 
-    // createDocument() method
-    public Document createDocument(String path, long frequency)
-    {
-        String fileName = MiscUtilities.getFileName(path);
-        this.path.setStringValue(path);
-        name.setStringValue(fileName);
-        name_caps.setStringValue(fileName);
-        String extension = MiscUtilities.getFileExtension(path).toLowerCase();
-        if (extension.startsWith("."))
-            extension = extension.substring(1);
-        fileExtension.setStringValue(extension);
-        this.frequency.setLongValue(frequency);
-        this.frequencyStored.setLongValue(frequency);
-        return document;
-    } //}}}
+	// createDocument() method
+	public Document createDocument(String path, long frequency)
+	{
+		String fileName = MiscUtilities.getFileName(path);
+		this.path.setStringValue(path);
+		name.setStringValue(fileName);
+		name_caps.setStringValue(fileName);
+		String extension = MiscUtilities.getFileExtension(path).toLowerCase();
+		if (extension.startsWith("."))
+			extension = extension.substring(1);
+		fileExtension.setStringValue(extension);
+		this.frequency.setLongValue(frequency);
+		frequencyStored.setLongValue(frequency);
+		return document;
+	} //}}}
 }

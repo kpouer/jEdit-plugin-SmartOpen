@@ -3,7 +3,7 @@
  * :tabSize=4:indentSize=4:noTabs=false:
  * :folding=explicit:collapseFolds=1:
  *
- * Copyright © 2011-2016 Matthieu Casanova
+ * Copyright © 2011-2022 Matthieu Casanova
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -32,17 +32,18 @@ import projectviewer.vpt.VPTFile;
  */
 public class VPTFileProvider implements FileProvider
 {
+	public static final VPTFile[] EMPTY_VPT_FILE_ARRAY = new VPTFile[0];
 	private final VPTFile[] fileArray;
 	private int index;
 
 	public VPTFileProvider(Collection<VPTFile> files)
 	{
-		fileArray = files.toArray(new VPTFile[files.size()]);
+		fileArray = files.toArray(EMPTY_VPT_FILE_ARRAY);
 	}
 
-    @Override
-    public Stream<String> stream()
-    {
-        return Arrays.stream(fileArray).map(VPTFile::getURL);
-    }
+	@Override
+	public Stream<String> stream()
+	{
+		return Arrays.stream(fileArray).map(VPTFile::getURL);
+	}
 }
