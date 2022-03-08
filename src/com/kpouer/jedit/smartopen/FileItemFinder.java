@@ -3,7 +3,7 @@
  * :tabSize=4:indentSize=4:noTabs=false:
  * :folding=explicit:collapseFolds=1:
  *
- * Copyright © 2011-2015 Matthieu Casanova
+ * Copyright © 2011-2022 Matthieu Casanova
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -24,6 +24,7 @@ package com.kpouer.jedit.smartopen;
 //{{{ 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import javax.swing.AbstractListModel;
 import javax.swing.JTextField;
 import javax.swing.ListCellRenderer;
@@ -105,14 +106,15 @@ public class FileItemFinder extends AbstractItemFinder<String>
 	@Override
 	public void selectionMade(String path)
 	{
-		Buffer buffer = jEdit.getBuffer(path);
+		Optional<Buffer> bufferOptional = jEdit.getBufferManager().getBuffer(path);
 		if (position != null)
 		{
 			String[] split = position.split(",");
 			try
 			{
 				int _seletedLine = Integer.parseInt(split[0]) - 1;
-				if (buffer == null)
+
+				if (bufferOptional.isEmpty())
 				{
 					// not loaded
 					EditBus.addToBus(new EBComponent()
@@ -135,7 +137,7 @@ public class FileItemFinder extends AbstractItemFinder<String>
 				}
 				else
 				{
-					jEdit.getActiveView().getEditPane().setBuffer(buffer);
+					jEdit.getActiveView().getEditPane().setBuffer(bufferOptional.get());
 					moveCaret(_seletedLine, split);
 				}
 			}
@@ -144,10 +146,10 @@ public class FileItemFinder extends AbstractItemFinder<String>
 				// ignore
 			}
 		}
-		if (buffer == null)
+		if (bufferOptional.isEmpty())
 			jEdit.openFile(jEdit.getActiveView().getEditPane(), path);
 		else
-			jEdit.getActiveView().getEditPane().setBuffer(buffer);
+			jEdit.getActiveView().getEditPane().setBuffer(bufferOptional.get());
 	} //}}}
 
 	//{{{ moveCaret() method
@@ -168,7 +170,7 @@ public class FileItemFinder extends AbstractItemFinder<String>
 			{
 				int offset = Integer.parseInt(split[1]);
 				int lineLength = textArea.getLineLength(_seletedLine);
-				caret += offset < lineLength ? offset : lineLength;
+				caret += Math.min(offset, lineLength);
 			}
 			catch (NumberFormatException e)
 			{

@@ -3,7 +3,7 @@
  * :tabSize=4:indentSize=4:noTabs=false:
  * :folding=explicit:collapseFolds=1:
  *
- * Copyright © 2011-2016 Matthieu Casanova
+ * Copyright © 2011-2022 Matthieu Casanova
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,6 +25,8 @@ package com.kpouer.jedit.smartopen;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -32,26 +34,24 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
-
-import javax.annotation.Nullable;
 
 import com.kpouer.jedit.smartopen.indexer.FileProvider;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
+import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.store.RAMDirectory;
-import org.apache.lucene.util.Bits;
 import org.gjt.sp.jedit.EditPlugin;
 import org.gjt.sp.jedit.jEdit;
 import org.gjt.sp.util.IOUtilities;
 import org.gjt.sp.util.Log;
 import org.gjt.sp.util.ProgressObserver;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import projectviewer.vpt.VPTProject;
 //}}}
 
@@ -80,7 +80,7 @@ public class FileIndex implements Closeable
 	} //}}}
 
 	//{{{ getIndexWriterConfig() method
-	private IndexWriterConfig getIndexWriterConfig()
+	private static IndexWriterConfig getIndexWriterConfig()
 	{
 		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(new StandardAnalyzer());
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
@@ -141,31 +141,28 @@ public class FileIndex implements Closeable
 			for (String token : dotSplit)
 			{
 				String[] split = CAMELCASE.split(token);
-				for (int i = 0; i < split.length; i++)
+				for (String value : split)
 				{
-					builder.append(split[i]).append('*');
+					builder.append(value).append('*');
 				}
 			}
+
 			Query queryCaps = new WildcardQuery(new Term(DocumentFactory.FIELD_NAME_CAPS, builder.toString()));
-			queryCaps.setBoost(10.0F);
+			queryCaps = new BoostQuery(queryCaps, 10.0F);
 			s = s.toLowerCase();
 			Query queryNoCaps = new WildcardQuery(new Term(DocumentFactory.FIELD_NAME, '*' + s + '*'));
 
-			BooleanQuery nameQuery = new BooleanQuery();
-			nameQuery.add(queryCaps, BooleanClause.Occur.SHOULD);
-			nameQuery.add(queryNoCaps, BooleanClause.Occur.SHOULD);
+			BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder()
+				.add(queryCaps, BooleanClause.Occur.SHOULD)
+				.add(queryNoCaps, BooleanClause.Occur.SHOULD);
 
 			BooleanQuery query;
-			if (extension.isEmpty())
-			{
-				query = nameQuery;
-			}
-			else
-			{
-				query = new BooleanQuery();
-				query.add(nameQuery, BooleanClause.Occur.MUST);
-				query.add(new TermQuery(new Term(DocumentFactory.FIELD_EXTENSION, extension.toLowerCase())), BooleanClause.Occur.MUST);
-			}
+			if (!extension.isEmpty())
+				queryBuilder
+					.add(new TermQuery(new Term(DocumentFactory.FIELD_EXTENSION, extension.toLowerCase())),
+						BooleanClause.Occur.MUST);
+
+			query = queryBuilder.build();
 			if (reader == null)
 				initReader();
 			IndexSearcher searcher = new IndexSearcher(reader);
@@ -224,22 +221,23 @@ public class FileIndex implements Closeable
 		Pattern exclude = SmartOpenOptionPane.globToPattern(jEdit.getProperty("options.smartopen.ExcludeGlobs"));
 		synchronized (LOCK)
 		{
-			try(IndexWriter writer = new IndexWriter(directory, getIndexWriterConfig()))
+			try (IndexWriter writer = getWriter())
 			{
-        Collection<String> knownFiles = append ? Collections.emptyList() : Collections.synchronizedCollection(getExistingFiles());
-        fileProvider.stream().parallel()
-            .filter(path -> !exclude.matcher(path).matches())
-            .forEach(path -> {
-              if (knownFiles.contains(path))
-                knownFiles.remove(path);
-              else
-                addDocument(writer, path);
-              added.increment();
-            });
+				Collection<String> knownFiles = append ? Collections.emptyList() : Collections.synchronizedCollection(getExistingFiles());
+				fileProvider.stream().parallel()
+					.filter(path -> !exclude.matcher(path).matches())
+					.forEach(path ->
+					{
+						if (knownFiles.contains(path))
+							knownFiles.remove(path);
+						else
+							addDocument(writer, path);
+						added.increment();
+					});
 
 				// iterate over documents that are still here but are not part of the project anymore
-        knownFiles.parallelStream()
-            .forEach(remainingFile -> deleteDocument(writer, remainingFile));
+				knownFiles.parallelStream()
+					.forEach(remainingFile -> deleteDocument(writer, remainingFile));
 			}
 			catch (IOException e)
 			{
@@ -257,6 +255,21 @@ public class FileIndex implements Closeable
 		long end = System.currentTimeMillis();
 		Log.log(Log.MESSAGE, this, "Added " + added.longValue() + " files in "+(end - start) + "ms");
 	} //}}}
+
+	@NotNull
+	private IndexWriter getWriter() throws IOException
+	{
+		try
+		{
+			return new IndexWriter(directory, getIndexWriterConfig());
+		}
+		catch (IllegalArgumentException e)
+		{
+			Log.log(Log.ERROR, this, "Error trying to create writer, will delete the index and retry");
+			deleteAndReopenDirectory();
+			return new IndexWriter(directory, getIndexWriterConfig());
+		}
+	}
 
 	//{{{ addDocument() method
 	private void addDocument(IndexWriter writer, String path)
@@ -314,15 +327,12 @@ public class FileIndex implements Closeable
 		if (reader != null)
 		{
 			Set<String> fields = Collections.singleton(DocumentFactory.FIELD_PATH);
-			Bits liveDocs = MultiFields.getLiveDocs(reader);
+
 			for (int i = 0; i < reader.maxDoc(); i++)
 			{
-				if (liveDocs == null || liveDocs.get(i))
-				{
-					Document doc = reader.document(i, fields);
-					String path = doc.get(DocumentFactory.FIELD_PATH);
-					knownFiles.add(path);
-				}
+				Document doc = reader.document(i, fields);
+				String path = doc.get(DocumentFactory.FIELD_PATH);
+				knownFiles.add(path);
 			}
 		}
 		return knownFiles;
@@ -335,14 +345,15 @@ public class FileIndex implements Closeable
 		long start = System.currentTimeMillis();
 		synchronized (LOCK)
 		{
-			try (IndexWriter writer = new IndexWriter(directory, getIndexWriterConfig()))
+			try (IndexWriter writer = getWriter())
 			{
 				removed = fileProvider.stream().parallel()
-						.map((Function<String, Void>) path -> {
-              observer.setStatus(path);
-              deleteDocument(writer, path);
-              return null;
-            }).count();
+					.map((Function<String, Void>) path ->
+					{
+						observer.setStatus(path);
+						deleteDocument(writer, path);
+						return null;
+					}).count();
 			}
 			catch (IOException e)
 			{
@@ -367,7 +378,7 @@ public class FileIndex implements Closeable
 
 		synchronized (LOCK)
 		{
-			try(IndexWriter writer = new IndexWriter(directory, getIndexWriterConfig()))
+			try(IndexWriter writer = getWriter())
 			{
 				long frequency = getFrequency(path);
 				if (frequency == 0L)
@@ -395,7 +406,7 @@ public class FileIndex implements Closeable
 		Directory tempDirectory;
 		if (jEdit.getBooleanProperty("options.smartopen.memoryindex"))
 		{
-			tempDirectory = new RAMDirectory();
+			tempDirectory = new ByteBuffersDirectory();
 		}
 		else
 		{
@@ -410,11 +421,65 @@ public class FileIndex implements Closeable
 			catch (IOException e)
 			{
 				Log.log(Log.ERROR, this, e);
-				tempDirectory = new RAMDirectory();
+				tempDirectory = new ByteBuffersDirectory();
 			}
 		}
 		return tempDirectory;
 	} //}}}
+
+	//{{{ deleteAndReopenDirectory() method
+	private Directory deleteAndReopenDirectory()
+	{
+		assert directory != null;
+		Directory tempDirectory;
+		if (jEdit.getBooleanProperty("options.smartopen.memoryindex"))
+		{
+			tempDirectory = directory;
+		}
+		else
+		{
+			try
+			{
+				EditPlugin plugin = jEdit.getPlugin(SmartOpenPlugin.class.getName());
+				File pluginHome = plugin.getPluginHome();
+				File index = new File(pluginHome, getIndexName());
+				deleteDirectory(index.toPath());
+				index.mkdirs();
+				tempDirectory = FSDirectory.open(index.toPath());
+			}
+			catch (IOException e)
+			{
+				Log.log(Log.ERROR, this, e);
+				tempDirectory = new ByteBuffersDirectory();
+			}
+		}
+		return tempDirectory;
+	} //}}}
+
+	public static void deleteDirectory(Path path) throws IOException
+	{
+		Files.walkFileTree(path,
+			new SimpleFileVisitor<>()
+			{
+				@Override
+				public FileVisitResult postVisitDirectory(Path dir, IOException exc)
+					throws IOException
+				{
+					Files.delete(dir);
+					return FileVisitResult.CONTINUE;
+				}
+
+				// delete files
+				@Override
+				public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+					throws IOException
+				{
+					Files.delete(file);
+					return FileVisitResult.CONTINUE;
+				}
+			}
+		);
+	}
 
 	//{{{ resetFrequency() method
 	public void resetFrequency()
@@ -426,7 +491,7 @@ public class FileIndex implements Closeable
 
 			synchronized (LOCK)
 			{
-				try(IndexWriter writer = new IndexWriter(directory, getIndexWriterConfig()))
+				try(IndexWriter writer = getWriter())
 				{
 					for (String path : existingFiles)
 						updateDocument(writer, path, 1L);
